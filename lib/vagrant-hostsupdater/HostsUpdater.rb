@@ -145,14 +145,37 @@ module VagrantPlugins
             adviseOnSudo
           end
         elsif Vagrant::Util::Platform.windows?
-          require 'tmpdir'
-          uuid = @machine.id || @machine.config.hostsupdater.id
-          tmpPath = File.join(Dir.tmpdir, 'hosts-' + uuid + '.cmd')
-          File.open(tmpPath, "w") do |tmpFile|
-          entries.each { |line| tmpFile.puts(">>\"#{@@hosts_path}\" echo #{line}") }
-          end
-          sudo(tmpPath)
-          File.delete(tmpPath)
+          # include OLE Automation object
+			    require 'win32ole'
+			  
+			    # get uuid and hashedId
+			    uuid = @machine.id || @machine.config.hostsupdater.id
+			    hashedId = Digest::MD5.hexdigest(uuid)
+			  
+			    # clean existing host file of any existing host references
+			    hosts = ""
+			    File.open(@@hosts_path).each do |line|
+				    hosts << line unless line.include?(hashedId)
+			    end
+			  
+			    # add updated host referenced to host data
+			    hosts = hosts + "\n" + content
+			  
+			    # create temp file to hold updated host file info
+			    temp = File.join(Dir.tmpdir, 'hosts-' + uuid + '.txt')			  
+			    file = File.open(temp, "w")
+			    file.write(hosts)
+			    file.close
+
+			    # set up source and dest locations
+			    source = file.path;
+			    dest = @@hosts_path
+			  
+			    # make copy command updating slashes
+			    copy_cmd = "copy \/Y \"#{source.gsub(/\//, "\\")}\" \"#{dest.gsub(/\//, "\\")}\""
+			  
+			    # execute command
+			    WIN32OLE.new('Shell.Application').ShellExecute('cmd', "/c #{copy_cmd}", nil, 'runas', 7)
         else
           content = "\n" + content + "\n"
           hostsFile = File.open(@@hosts_path, "a")
@@ -164,11 +187,36 @@ module VagrantPlugins
       def removeFromHosts(options = {})
         uuid = @machine.id || @machine.config.hostsupdater.id
         hashedId = Digest::MD5.hexdigest(uuid)
-        if !File.writable_real?(@@hosts_path) || Vagrant::Util::Platform.windows?
+        if !File.writable_real?(@@hosts_path)
           if !sudo(%Q(sed -i -e '/#{hashedId}/ d' #@@hosts_path))
             @ui.error "[vagrant-hostsupdater] Failed to remove hosts, could not use sudo"
             adviseOnSudo
           end
+        elsif Vagrant::Util::Platform.windows?
+			    # include OLE Automation object
+			    require 'win32ole'
+			  
+			    # clean existing host file of any existing host references
+			    hosts = ""
+			    File.open(@@hosts_path).each do |line|
+				    hosts << line unless line.include?(hashedId)
+			    end
+			  			  
+			    # create temp file to hold updated host file info
+			    temp = File.join(Dir.tmpdir, 'hosts-' + uuid + '.txt')  
+			    file = File.open(temp, "w")
+			    file.write(hosts)
+			    file.close
+
+			    # set up source and dest locations
+			    source = file.path;
+			    dest = @@hosts_path
+			  
+			    # make copy command updating slashes
+			    copy_cmd = "copy \/Y \"#{source.gsub(/\//, "\\")}\" \"#{dest.gsub(/\//, "\\")}\""
+
+			    # execute command
+			    WIN32OLE.new('Shell.Application').ShellExecute('cmd', "/c #{copy_cmd}", nil, 'runas', 7)	
         else
           hosts = ""
           File.open(@@hosts_path).each do |line|
