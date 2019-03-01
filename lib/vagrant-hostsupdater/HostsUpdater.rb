@@ -70,6 +70,10 @@ module VagrantPlugins
             end
           end
         end
+	      
+	ips.each do |ip|
+		@ui.info "[vagrant-hostsupdater] ip found #{ip} with #{hostnames[ip].length} hosts"
+	end
 
         return hostnames
       end
